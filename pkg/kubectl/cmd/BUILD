@@ -37,6 +37,7 @@ go_library(
         "//staging/src/k8s.io/kubectl/pkg/cmd/expose:go_default_library",
         "//staging/src/k8s.io/kubectl/pkg/cmd/get:go_default_library",
         "//staging/src/k8s.io/kubectl/pkg/cmd/helloworld:go_default_library",
+	"//staging/src/k8s.io/kubectl/pkg/cmd/hellokubernetes:go_default_library",
         "//staging/src/k8s.io/kubectl/pkg/cmd/kustomize:go_default_library",
         "//staging/src/k8s.io/kubectl/pkg/cmd/label:go_default_library",
         "//staging/src/k8s.io/kubectl/pkg/cmd/logs:go_default_library",
