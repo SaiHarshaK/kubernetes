@@ -110,7 +110,6 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 	if err != nil {
 		return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf("retrieving original configuration from:\n%v\nfor:", obj), source, err)
 	}
-
 	var patchType types.PatchType
 	var patch []byte
 	var lookupPatchMeta strategicpatch.LookupPatchMeta
@@ -184,6 +183,8 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 // the final patched object. On failure, returns an error.
 func (p *Patcher) Patch(current runtime.Object, modified []byte, source, namespace, name string, errOut io.Writer) ([]byte, runtime.Object, error) {
 	var getErr error
+	metadata, _ := meta.Accessor(current)
+	fmt.Println("\nDuring patch delete timestamp1: ", metadata.GetDeletionTimestamp(), metadata.GetFinalizers())
 	patchBytes, patchObject, err := p.patchSimple(current, modified, source, namespace, name, errOut)
 	if p.Retries == 0 {
 		p.Retries = maxPatchRetry

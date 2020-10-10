@@ -68,6 +68,7 @@ type ApplyOptions struct {
 	All             bool
 	Overwrite       bool
 	OpenAPIPatch    bool
+	FailIfDeleting  bool
 	PruneWhitelist  []string
 
 	Validator     validation.Schema
@@ -133,6 +134,7 @@ var (
 		kubectl apply --prune -f manifest.yaml --all --prune-whitelist=core/v1/ConfigMap`))
 
 	warningNoLastAppliedConfigAnnotation = "Warning: resource %[1]s is missing the %[2]s annotation which is required by %[3]s apply. %[3]s apply should only be used on resources created declaratively by either %[3]s create --save-config or %[3]s apply. The missing annotation will be patched automatically.\n"
+	warningChangesOnDeletingResource     = "Warning: Detected changes to resource %[1]s which is currently being deleted.\n"
 )
 
 // NewApplyOptions creates new ApplyOptions for the `apply` command
@@ -142,8 +144,9 @@ func NewApplyOptions(ioStreams genericclioptions.IOStreams) *ApplyOptions {
 		DeleteFlags: delete.NewDeleteFlags("that contains the configuration to apply"),
 		PrintFlags:  genericclioptions.NewPrintFlags("created").WithTypeSetter(scheme.Scheme),
 
-		Overwrite:    true,
-		OpenAPIPatch: true,
+		Overwrite:      true,
+		OpenAPIPatch:   true,
+		FailIfDeleting: true,
 
 		Recorder: genericclioptions.NoopRecorder{},
 
@@ -185,6 +188,7 @@ func NewCmdApply(baseName string, f cmdutil.Factory, ioStreams genericclioptions
 	o.PrintFlags.AddFlags(cmd)
 
 	cmd.Flags().BoolVar(&o.Overwrite, "overwrite", o.Overwrite, "Automatically resolve conflicts between the modified and live configuration by using values from the modified configuration")
+	cmd.Flags().BoolVar(&o.FailIfDeleting, "fail-if-deleting", o.FailIfDeleting, "fail when applying resources that have the deletionTimestamp set")
 	cmd.Flags().BoolVar(&o.Prune, "prune", o.Prune, "Automatically delete resource objects, including the uninitialized ones, that do not appear in the configs and are created by either apply or create --save-config. Should be used with either -l or --all.")
 	cmdutil.AddValidateFlags(cmd)
 	cmd.Flags().StringVarP(&o.Selector, "selector", "l", o.Selector, "Selector (label query) to filter on, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
@@ -407,8 +411,9 @@ func (o *ApplyOptions) applyOneObject(info *resource.Info) error {
 		klog.V(4).Infof("error recording current command: %v", err)
 	}
 
+	metadata, _ := meta.Accessor(info.Object)
+
 	if len(info.Name) == 0 {
-		metadata, _ := meta.Accessor(info.Object)
 		generatedName := metadata.GetGenerateName()
 		if len(generatedName) > 0 {
 			return fmt.Errorf("from %s: cannot use generate name with apply", generatedName)
@@ -538,8 +543,24 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 		return err
 	}
 
+	metadata, _ = meta.Accessor(info.Object)
+	fmt.Println("\nCurrent delete timestamp: ", metadata.GetDeletionTimestamp(), metadata.GetFinalizers())
+	if metadata.GetDeletionTimestamp() != nil {
+		if !o.FailIfDeleting {
+			// just warn the user about the conflict
+			fmt.Fprintf(o.ErrOut, warningChangesOnDeletingResource, metadata.GetName())
+		} else {
+			// fail kubectl apply by setting a finalizer and deletionTimestamp to nil
+			fmt.Println("we should fail it")
+			metadata.SetDeletionTimestamp(nil)
+			metadata.SetFinalizers([]string{"apply-delete-conflict", "orphan"})
+			info.Refresh(info.Object, true)
+			metadata, _ = meta.Accessor(info.Object)
+			fmt.Println("\nupdated delete timestamp: ", metadata.GetDeletionTimestamp(), metadata.GetFinalizers())
+		}
+	}
+
 	if o.DryRunStrategy != cmdutil.DryRunClient {
-		metadata, _ := meta.Accessor(info.Object)
 		annotationMap := metadata.GetAnnotations()
 		if _, ok := annotationMap[corev1.LastAppliedConfigAnnotation]; !ok {
 			fmt.Fprintf(o.ErrOut, warningNoLastAppliedConfigAnnotation, info.ObjectName(), corev1.LastAppliedConfigAnnotation, o.cmdBaseName)
@@ -555,6 +576,11 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 		}
 
 		info.Refresh(patchedObject, true)
+
+		metadata1, _ := meta.Accessor(info.Object)
+		metadata2, _ := meta.Accessor(patchedObject)
+		fmt.Println("\nAfter patch delete timestamp1: ", metadata1.GetDeletionTimestamp(), metadata1.GetFinalizers())
+		fmt.Println("\nAfter patch delete timestamp2: ", metadata2.GetDeletionTimestamp(), metadata2.GetFinalizers())
 
 		if string(patchBytes) == "{}" && !o.shouldPrintObject() {
 			printer, err := o.ToPrinter("unchanged")
