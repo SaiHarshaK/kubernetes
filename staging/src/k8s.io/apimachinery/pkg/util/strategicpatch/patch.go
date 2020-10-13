@@ -168,11 +168,14 @@ func CreateTwoWayMergeMapPatchUsingLookupPatchMeta(original, modified JSONMap, s
 func diffMaps(original, modified map[string]interface{}, schema LookupPatchMeta, diffOptions DiffOptions) (map[string]interface{}, error) {
 	patch := map[string]interface{}{}
 
+	// fmt.Println("\n\nIn diffMaps for mod type: ", modified)
+
 	// This will be used to build the $retainKeys directive sent in the patch
 	retainKeysList := make([]interface{}, 0, len(modified))
 
 	// Compare each value in the modified map against the value in the original map
 	for key, modifiedValue := range modified {
+
 		// Get the underlying type for pointers
 		if diffOptions.BuildRetainKeysDirective && modifiedValue != nil {
 			retainKeysList = append(retainKeysList, key)
@@ -184,8 +187,14 @@ func diffMaps(original, modified map[string]interface{}, schema LookupPatchMeta,
 			if !diffOptions.IgnoreChangesAndAdditions {
 				patch[key] = modifiedValue
 			}
+			// fmt.Println("\n\nOKKKKKKKKKKKKKKKKKKKK adding this", key, patch[key], "\n\n")
 			continue
 		}
+
+		// fmt.Println("compare vals for key: ", key)
+		// fmt.Println("\n\norig val: ", originalValue)
+		// fmt.Println("\n\nmod val: ", modifiedValue)
+		// fmt.Println("\n\nval type equality: ", reflect.TypeOf(originalValue) != reflect.TypeOf(modifiedValue))
 
 		// The patch may have a patch directive
 		// TODO: figure out if we need this. This shouldn't be needed by apply. When would the original map have patch directives in it?
@@ -214,6 +223,7 @@ func diffMaps(original, modified map[string]interface{}, schema LookupPatchMeta,
 			modifiedValueTyped := modifiedValue.([]interface{})
 			err = handleSliceDiff(key, originalValueTyped, modifiedValueTyped, patch, schema, diffOptions)
 		default:
+			// fmt.Println("im in default")
 			replacePatchFieldIfNotEqual(key, originalValue, modifiedValue, patch, diffOptions)
 		}
 		if err != nil {
@@ -2018,6 +2028,7 @@ func mapsOfMapsHaveConflicts(typedLeft, typedRight map[string]interface{}, schem
 // value). We also propagate values fields that do not exist in original but are explicitly
 // defined in modified.
 func CreateThreeWayMergePatch(original, modified, current []byte, schema LookupPatchMeta, overwrite bool, fns ...mergepatch.PreconditionFunc) ([]byte, error) {
+	// fmt.Println("ss byte thing: ", original, " xxx ", modified, " xxx ", current)
 	originalMap := map[string]interface{}{}
 	if len(original) > 0 {
 		if err := json.Unmarshal(original, &originalMap); err != nil {
@@ -2039,6 +2050,10 @@ func CreateThreeWayMergePatch(original, modified, current []byte, schema LookupP
 		}
 	}
 
+	// fmt.Println("\nmaps orig: ", originalMap)
+	// fmt.Println("\nmaps modi: ", modifiedMap)
+	// fmt.Println("\nmaps curr: ", currentMap)
+
 	// The patch is the difference from current to modified without deletions, plus deletions
 	// from original to modified. To find it, we compute deletions, which are the deletions from
 	// original to modified, and delta, which is the difference from current to modified without
@@ -2051,6 +2066,8 @@ func CreateThreeWayMergePatch(original, modified, current []byte, schema LookupP
 	if err != nil {
 		return nil, err
 	}
+	// fmt.Println("\ndeltamap", deltaMap)
+	// fmt.Println("\n\nxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n\n\n")
 	deletionsMapDiffOptions := DiffOptions{
 		SetElementOrder:           true,
 		IgnoreChangesAndAdditions: true,
@@ -2060,11 +2077,13 @@ func CreateThreeWayMergePatch(original, modified, current []byte, schema LookupP
 		return nil, err
 	}
 
+	// fmt.Println("\ndeletionsMap", deletionsMap)
 	mergeOptions := MergeOptions{}
 	patchMap, err := mergeMap(deletionsMap, deltaMap, schema, mergeOptions)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("\npatchMap", patchMap)
 
 	// Apply the preconditions to the patch, and return an error if any of them fail.
 	for _, fn := range fns {

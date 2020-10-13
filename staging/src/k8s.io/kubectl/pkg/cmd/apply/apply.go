@@ -17,6 +17,7 @@ limitations under the License.
 package apply
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 
@@ -29,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
+	"k8s.io/apimachinery/pkg/util/mergepatch"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/cli-runtime/pkg/printers"
@@ -496,6 +498,8 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 	// Get the modified configuration of the object. Embed the result
 	// as an annotation in the modified configuration, so that it will appear
 	// in the patch sent to the server.
+	metadata, _ = meta.Accessor(info.Object)
+	fmt.Println("\nModified TS metadas delete timestamp: ", metadata.GetDeletionTimestamp(), metadata.GetFinalizers())
 	modified, err := util.GetModifiedConfiguration(info.Object, true, unstructured.UnstructuredJSONScheme)
 	if err != nil {
 		return cmdutil.AddSourceToErr(fmt.Sprintf("retrieving modified configuration from:\n%s\nfor:", info.String()), info.Source, err)
@@ -552,8 +556,21 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 		} else {
 			// fail kubectl apply by setting a finalizer and deletionTimestamp to nil
 			fmt.Println("we should fail it")
-			metadata.SetDeletionTimestamp(nil)
+			//update modified to store deleted timestamp also
+			modifiedMap := map[string]interface{}{}
+			if err := json.Unmarshal(modified, &modifiedMap); err != nil {
+				return mergepatch.ErrBadJSONDoc
+			}
+			modifiedMap["deletionTimestamp"] = nil
+			// finalizers:[apply-delete-conflict orphan]
+			modifiedMap["finalizers"] = []string{"apply-delete-conflict", "orphan"}
+			modified, err = json.Marshal(modifiedMap)
+			if err != nil {
+				return err
+			}
 			metadata.SetFinalizers([]string{"apply-delete-conflict", "orphan"})
+			// update current object
+			metadata.SetDeletionTimestamp(nil)
 			info.Refresh(info.Object, true)
 			metadata, _ = meta.Accessor(info.Object)
 			fmt.Println("\nupdated delete timestamp: ", metadata.GetDeletionTimestamp(), metadata.GetFinalizers())
@@ -571,6 +588,7 @@ See http://k8s.io/docs/reference/using-api/api-concepts/#conflicts`, err)
 			return err
 		}
 		patchBytes, patchedObject, err := patcher.Patch(info.Object, modified, info.Source, info.Namespace, info.Name, o.ErrOut)
+		fmt.Println("final: ", string(patchBytes))
 		if err != nil {
 			return cmdutil.AddSourceToErr(fmt.Sprintf("applying patch:\n%s\nto:\n%v\nfor:", patchBytes, info), info.Source, err)
 		}

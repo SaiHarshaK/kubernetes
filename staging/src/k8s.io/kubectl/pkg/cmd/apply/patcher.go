@@ -121,6 +121,7 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 	versionedObject, err := scheme.Scheme.New(p.Mapping.GroupVersionKind)
 	switch {
 	case runtime.IsNotRegisteredError(err):
+		fmt.Println("case 1")
 		// fall back to generic JSON merge patch
 		patchType = types.MergePatchType
 		preconditions := []mergepatch.PreconditionFunc{mergepatch.RequireKeyUnchanged("apiVersion"),
@@ -133,14 +134,17 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 			return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
 		}
 	case err != nil:
+		fmt.Println("case 2")
 		return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf("getting instance of versioned object for %v:", p.Mapping.GroupVersionKind), source, err)
 	case err == nil:
+		fmt.Println("case 3", patch)
 		// Compute a three way strategic merge patch to send to server.
 		patchType = types.StrategicMergePatchType
 
 		// Try to use openapi first if the openapi spec is available and can successfully calculate the patch.
 		// Otherwise, fall back to baked-in types.
 		if p.OpenapiSchema != nil {
+			fmt.Println("some schema thing: ", p.OpenapiSchema.LookupResource(p.Mapping.GroupVersionKind) != nil)
 			if schema = p.OpenapiSchema.LookupResource(p.Mapping.GroupVersionKind); schema != nil {
 				lookupPatchMeta = strategicpatch.PatchMetaFromOpenAPI{Schema: schema}
 				if openapiPatch, err := strategicpatch.CreateThreeWayMergePatch(original, modified, current, lookupPatchMeta, p.Overwrite); err != nil {
@@ -152,11 +156,14 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 			}
 		}
 
+		fmt.Println("patch is wut?: ", len(patch))
 		if patch == nil {
+			fmt.Println("patch is nil")
 			lookupPatchMeta, err = strategicpatch.NewPatchMetaFromStruct(versionedObject)
 			if err != nil {
 				return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
 			}
+			fmt.Println("wut dis lookupPatchMeta : ", lookupPatchMeta)
 			patch, err = strategicpatch.CreateThreeWayMergePatch(original, modified, current, lookupPatchMeta, p.Overwrite)
 			if err != nil {
 				return nil, nil, cmdutil.AddSourceToErr(fmt.Sprintf(createPatchErrFormat, original, modified, current), source, err)
@@ -164,7 +171,10 @@ func (p *Patcher) patchSimple(obj runtime.Object, modified []byte, source, names
 		}
 	}
 
+	fmt.Println("pre final: ", string(patch))
+
 	if string(patch) == "{}" {
+		fmt.Println("empty patch {}")
 		return patch, obj, nil
 	}
 

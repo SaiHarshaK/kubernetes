@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/evanphx/json-patch"
+	jsonpatch "github.com/evanphx/json-patch"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/mergepatch"
 )
@@ -38,16 +38,25 @@ func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mer
 	if len(current) == 0 {
 		current = []byte(`{}`)
 	}
-
+	fmt.Println("byte thing: ", original, " xxx ", modified, " xxx ", current)
 	addAndChangePatch, err := jsonpatch.CreateMergePatch(current, modified)
 	if err != nil {
 		return nil, err
 	}
+	var bla1 map[string]interface{}
+	var bla2 map[string]interface{}
+	var bla3 map[string]interface{}
+	err = json.Unmarshal(original, &bla1)
+	err = json.Unmarshal(modified, &bla2)
+	err = json.Unmarshal(current, &bla3)
+	fmt.Println("objs: ", bla1, " xxx ", bla2, " xxx ", bla3)
+
 	// Only keep addition and changes
 	addAndChangePatch, addAndChangePatchObj, err := keepOrDeleteNullInJsonPatch(addAndChangePatch, false)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("addAndChangePatchObj: ", addAndChangePatchObj)
 
 	deletePatch, err := jsonpatch.CreateMergePatch(original, modified)
 	if err != nil {
@@ -58,6 +67,7 @@ func CreateThreeWayJSONMergePatch(original, modified, current []byte, fns ...mer
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("deletePatchObj: ", deletePatchObj)
 
 	hasConflicts, err := mergepatch.HasConflicts(addAndChangePatchObj, deletePatchObj)
 	if err != nil {
